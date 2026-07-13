@@ -11,3 +11,5 @@ Potential improvements:
 * Themes
 * HTML export option
 * Activity Pub Support
+* Ability to specifiy date ranges
+* Ability to enable/disable images
