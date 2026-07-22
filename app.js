@@ -10,12 +10,15 @@ const relayInput = el("relay-input");
 const loadBtn = el("load-btn");
 const pdfBtn = el("pdf-btn");
 const zipBtn = el("zip-btn");
+const htmlBtn = el("html-btn");
 const statusEl = el("status");
 const progressEl = el("progress");
 const bookletEl = el("booklet");
 const optReactions = el("opt-reactions");
 const optReplies = el("opt-replies");
 const optParents = el("opt-parents");
+const dateFromInput = el("date-from");
+const dateToInput = el("date-to");
 const imgWidthInput = el("img-width");
 const imgQualityInput = el("img-quality");
 const imgQualityVal = el("img-quality-val");
@@ -116,20 +119,19 @@ async function fetchProfile(pubkey, relays) {
   return pool.get(relays, { kinds: [0], authors: [pubkey] });
 }
 
-async function fetchAllAuthoredNotes(pubkey, relays) {
+// since/until are optional unix-second bounds (inclusive) from the date-range
+// option. Relays apply them server-side, so an empty range fetches everything.
+async function fetchAllAuthoredNotes(pubkey, relays, { since = null, until = null } = {}) {
   const seen = new Map();
-  let until = Math.floor(Date.now() / 1000) + 60;
+  let cursor = until != null ? until : Math.floor(Date.now() / 1000) + 60;
   const pageSize = 500;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const batch = await pool.querySync(relays, {
-      kinds: [1],
-      authors: [pubkey],
-      until,
-      limit: pageSize,
-    });
+    const filter = { kinds: [1], authors: [pubkey], until: cursor, limit: pageSize };
+    if (since != null) filter.since = since;
+    const batch = await pool.querySync(relays, filter);
     if (!batch.length) break;
-    let oldest = until;
+    let oldest = cursor;
     let newCount = 0;
     for (const ev of batch) {
       if (!seen.has(ev.id)) {
@@ -140,9 +142,25 @@ async function fetchAllAuthoredNotes(pubkey, relays) {
     }
     appendStatus(`Fetched ${seen.size} posts so far…`);
     if (batch.length < pageSize || newCount === 0) break;
-    until = oldest - 1;
+    cursor = oldest - 1;
+    // Paged back past the start of the requested range — nothing older matters.
+    if (since != null && cursor < since) break;
   }
   return [...seen.values()];
+}
+
+// Reads the two date inputs into inclusive unix-second bounds. Dates are
+// interpreted in the user's local timezone: the "from" day starts at 00:00:00
+// and the "to" day extends through 23:59:59 so both endpoints are included.
+function parseDateRange() {
+  const fromVal = dateFromInput.value;
+  const toVal = dateToInput.value;
+  const since = fromVal ? Math.floor(new Date(`${fromVal}T00:00:00`).getTime() / 1000) : null;
+  const until = toVal ? Math.floor(new Date(`${toVal}T23:59:59.999`).getTime() / 1000) : null;
+  if (since != null && until != null && since > until) {
+    throw new Error("Date range is invalid: the start date is after the end date.");
+  }
+  return { since, until };
 }
 
 function chunk(arr, size) {
@@ -295,6 +313,22 @@ function monthKey(ts) {
 function monthLabel(key) {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+}
+
+// Calendar span between two timestamps as whole years + leftover months (0–11).
+// The day-of-month check drops a not-yet-complete final month so the total never
+// rounds up past the real elapsed time.
+function spanYearsMonths(startTs, endTs) {
+  const start = new Date(startTs * 1000);
+  const end = new Date(endTs * 1000);
+  let years = end.getFullYear() - start.getFullYear();
+  let months = end.getMonth() - start.getMonth();
+  if (end.getDate() < start.getDate()) months -= 1;
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  return { years: Math.max(0, years), months: Math.max(0, months) };
 }
 
 function escapeHtml(s) {
@@ -452,9 +486,13 @@ async function renderBooklet({ profile, pubkey, notes, parentsById, reactionsByP
 
   const stats = document.createElement("div");
   stats.className = "stats";
-  const monthsCovered = new Set(notes.map((n) => monthKey(n.created_at))).size;
-  const yearsCovered = new Set(notes.map((n) => new Date(n.created_at * 1000).getFullYear())).size;
-  const statEntries = [["Posts", notes.length], ["Years", yearsCovered], ["Months", monthsCovered]];
+  // Span from the first to the last post, broken into whole years plus the
+  // remaining months (0–11) so the two tiles read as one duration — e.g.
+  // "4 years, 3 months" rather than the old "4 years / 33 months" mismatch.
+  const span = notes.length
+    ? spanYearsMonths(notes[0].created_at, notes[notes.length - 1].created_at)
+    : { years: 0, months: 0 };
+  const statEntries = [["Posts", notes.length], ["Years", span.years], ["Months", span.months]];
   if (notes.length) {
     const fmtDay = (ts) =>
       new Date(ts * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -605,11 +643,15 @@ loadBtn.addEventListener("click", async () => {
   loadBtn.disabled = true;
   pdfBtn.disabled = true;
   zipBtn.disabled = true;
+  htmlBtn.disabled = true;
   bookletEl.innerHTML = "";
   setStatus("Resolving identity…");
   setProgress(null);
 
   try {
+    // Validate the date range up front so a bad range fails before any fetching.
+    const dateRange = parseDateRange();
+
     pool = new SimplePool();
 
     const { pubkey, hintRelays } = await resolvePubkey(pubkeyInput.value);
@@ -635,8 +677,15 @@ loadBtn.addEventListener("click", async () => {
     const profile = await fetchProfile(pubkey, relays);
     state.profile = profile;
 
-    appendStatus("Fetching posts…");
-    const notes = await fetchAllAuthoredNotes(pubkey, relays);
+    if (dateRange.since != null || dateRange.until != null) {
+      const fmtBound = (ts) => new Date(ts * 1000).toLocaleDateString();
+      const fromLabel = dateRange.since != null ? fmtBound(dateRange.since) : "the beginning";
+      const toLabel = dateRange.until != null ? fmtBound(dateRange.until) : "now";
+      appendStatus(`Fetching posts from ${fromLabel} to ${toLabel}…`);
+    } else {
+      appendStatus("Fetching posts…");
+    }
+    const notes = await fetchAllAuthoredNotes(pubkey, relays, dateRange);
     notes.sort((a, b) => a.created_at - b.created_at);
 
     const options = {
@@ -697,6 +746,7 @@ loadBtn.addEventListener("click", async () => {
 
     pdfBtn.disabled = false;
     zipBtn.disabled = false;
+    htmlBtn.disabled = false;
     setStatus(`Done. Loaded ${notes.length} posts across ${new Set(notes.map((n) => monthKey(n.created_at))).size} month(s).`);
   } catch (err) {
     console.error(err);
@@ -735,26 +785,140 @@ pdfBtn.addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Single-file HTML export
+// ---------------------------------------------------------------------------
+// Serializes the already-rendered booklet — the same DOM the PDF prints from —
+// into one standalone .html document: the booklet markup with the stylesheet
+// inlined and images already embedded as data URLs by hydrateImages(). The
+// result opens with no server, network, or relay connection.
+async function collectStyleCss() {
+  // Prefer fetching the stylesheet source so we capture it verbatim.
+  try {
+    const res = await fetch("style.css");
+    if (res.ok) return await res.text();
+  } catch {
+    // Opened from file:// where fetch is blocked — reconstruct from the sheets.
+  }
+  let css = "";
+  for (const sheet of document.styleSheets) {
+    try {
+      for (const rule of sheet.cssRules) css += `${rule.cssText}\n`;
+    } catch {
+      // Inaccessible (e.g. cross-origin) stylesheet — skip it.
+    }
+  }
+  return css;
+}
+
+htmlBtn.addEventListener("click", async () => {
+  htmlBtn.disabled = true;
+  setStatus("Building single-file HTML export…");
+  try {
+    const meta = state.profile ? safeJson(state.profile.content) : {};
+    const title = `${displayNameFor(meta)} — Nostr Post History`;
+
+    const baseCss = await collectStyleCss();
+    // Standalone overrides: on screen #booklet is a scroll box inside the app;
+    // as a full page it should flow freely and sit on a page-like backdrop.
+    const overrideCss = `
+html, body { margin: 0; background: #e9e9ee; }
+#booklet {
+  max-width: 820px;
+  margin: 2rem auto;
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.18);
+}
+@media print { #booklet { max-width: none; margin: 0; box-shadow: none; } }`;
+
+    const doc =
+      `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${escapeHtml(title)}</title>
+<style>
+${baseCss}
+${overrideCss}
+</style>
+</head>
+<body>
+<div id="booklet">${bookletEl.innerHTML}</div>
+</body>
+</html>`;
+
+    const blob = new Blob([doc], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `nostr-history-${state.pubkey || "user"}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setStatus("HTML file downloaded.");
+  } catch (err) {
+    console.error(err);
+    appendStatus(`HTML export error: ${err.message || err}`);
+  } finally {
+    htmlBtn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------------
 // JSON zip export
 // ---------------------------------------------------------------------------
+// Each event is written to its own file containing a single canonical Nostr
+// event object — the 7 fields defined by NIP-01 (id, pubkey, created_at, kind,
+// tags, content, sig) and nothing else. That's exactly the object a client
+// wraps in ["EVENT", <event>] to publish, so any file here can be re-uploaded
+// to a relay verbatim. nostr-tools may attach transport-only extras (e.g. a
+// [SymbolTable] marker); canonicalEvent strips those so the JSON re-verifies.
+function canonicalEvent(ev) {
+  return {
+    id: ev.id,
+    pubkey: ev.pubkey,
+    created_at: ev.created_at,
+    kind: ev.kind,
+    tags: ev.tags,
+    content: ev.content,
+    sig: ev.sig,
+  };
+}
+
+// A UTC date prefix keeps files chronologically sortable in a file browser; the
+// full event id guarantees uniqueness (two notes can share a second).
+function eventFileName(ev) {
+  const day = new Date(ev.created_at * 1000).toISOString().slice(0, 10);
+  return `${day}-${ev.id}.json`;
+}
+
 zipBtn.addEventListener("click", async () => {
   zipBtn.disabled = true;
   setStatus("Building zip of raw events…");
   try {
     const zip = new JSZip();
-    if (state.profile) zip.file("profile.json", JSON.stringify(state.profile, null, 2));
+    let fileCount = 0;
+
+    // The profile (kind 0) is itself a signed event — export it as a standalone
+    // event file too, so it can be re-published like any other note.
+    if (state.profile) {
+      zip.folder("profile").file(eventFileName(state.profile), JSON.stringify(canonicalEvent(state.profile), null, 2));
+      fileCount++;
+    }
 
     for (const [group, events] of Object.entries(state.rawEventsByGroup)) {
       if (!events.length) continue;
-      const byMonth = new Map();
-      for (const ev of events) {
-        const key = monthKey(ev.created_at);
-        if (!byMonth.has(key)) byMonth.set(key, []);
-        byMonth.get(key).push(ev);
-      }
       const folder = zip.folder(group);
-      for (const [key, evs] of byMonth) {
-        folder.file(`${key}.json`, JSON.stringify(evs, null, 2));
+      const usedNames = new Set();
+      for (const ev of events) {
+        // Guard against duplicate ids within a group producing a colliding name.
+        let name = eventFileName(ev);
+        while (usedNames.has(name)) name = name.replace(/\.json$/, `-${usedNames.size}.json`);
+        usedNames.add(name);
+        folder.file(name, JSON.stringify(canonicalEvent(ev), null, 2));
+        fileCount++;
       }
     }
 
@@ -767,7 +931,7 @@ zipBtn.addEventListener("click", async () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    setStatus("Zip downloaded.");
+    setStatus(`Zip downloaded — ${fileCount} event file(s), one event per file.`);
   } catch (err) {
     console.error(err);
     appendStatus(`Zip export error: ${err.message || err}`);

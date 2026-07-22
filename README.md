@@ -9,7 +9,5 @@ Potential improvements:
 * Reposted content support
 * Wider NIP support
 * Themes
-* HTML export option
 * Activity Pub Support
-* Ability to specifiy date ranges
 * Ability to enable/disable images

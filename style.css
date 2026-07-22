@@ -51,7 +51,7 @@ body {
 .panel h2 { margin-top: 0; font-size: 1.1rem; }
 
 label { display: block; margin: 0.75rem 0 0.25rem; font-size: 0.9rem; color: var(--muted); }
-input[type="text"], input[type="number"], textarea {
+input[type="text"], input[type="number"], input[type="date"], textarea {
   width: 100%;
   background: #0c0e13;
   border: 1px solid var(--border);
@@ -61,6 +61,15 @@ input[type="text"], input[type="number"], textarea {
   font-size: 0.95rem;
 }
 textarea { font-family: ui-monospace, monospace; resize: vertical; }
+input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.date-range input[type="date"] { flex: 1; }
+.date-range-sep { color: var(--muted); font-size: 0.9rem; }
 
 .checkbox-row {
   display: flex;
@@ -84,6 +93,53 @@ button {
 }
 button:disabled { background: #3a3d47; cursor: not-allowed; }
 button:hover:not(:disabled) { filter: brightness(1.1); }
+
+/* ---- Download section ---- */
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+@media (max-width: 640px) {
+  .download-grid { grid-template-columns: 1fr; }
+}
+.download-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  text-align: left;
+  padding: 1rem;
+  margin: 0;
+  background: #0c0e13;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  min-height: 100%;
+}
+.download-option:hover:not(:disabled) {
+  filter: none;
+  border-color: var(--accent);
+  background: #12131b;
+}
+.download-option:disabled {
+  background: #0c0e13;
+  opacity: 0.55;
+}
+.download-option-title { font-size: 1rem; font-weight: 600; }
+.download-option-desc { font-size: 0.82rem; color: var(--muted); font-weight: 400; }
+.badge {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-2);
+  border: 1px solid var(--accent-2);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  vertical-align: middle;
+  margin-left: 0.25rem;
+}
 
 .status { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; white-space: pre-line; }
 progress { width: 100%; margin-top: 0.5rem; }
@@ -280,9 +336,12 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 @media print {
   @page { margin: 0.9in 0.75in 0.6in; }
 
-  .app-header, .layout, .app-footer, #preview-wrap h2, #preview-wrap .hint {
+  .app-header, .layout, #download, .app-footer, #preview-wrap h2, #preview-wrap .hint {
     display: none !important;
   }
+  /* The preview panel is only a frame on screen; drop its chrome when printing
+     so the white booklet isn't boxed by the dark panel border/background. */
+  #preview-wrap { background: none; border: none; border-radius: 0; }
   body { background: white; }
   #preview-wrap { max-width: none; padding: 0; margin: 0; }
   #booklet {
@@ -291,26 +350,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
     border-radius: 0;
   }
 
-  /* Repeats on every printed page (Chromium prints position:fixed elements
-     once per page) so the account stays identifiable throughout the booklet. */
-  .print-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    position: fixed;
-    top: -0.65in;
-    left: 0;
-    right: 0;
-    height: 0.5in;
-    border-bottom: 1px solid #ccc;
-    font-size: 0.8rem;
-    color: #555;
-  }
-  .print-header img, .print-header .avatar-fallback {
-    width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
-    background: #333; color: white; font-size: 0.7rem; font-weight: 600;
-    display: flex; align-items: center; justify-content: center;
-  }
+  /* The running "· Nostr Post History" header is intentionally not printed —
+     it repeated on every page and read as clutter. The cover page already
+     identifies the account. */
+  .print-header { display: none !important; }
 
   .cover-page, .toc, .month-section { page-break-after: always; }
   .post, .parent-post, .post-group, .embedded-quote, .replies-block {
