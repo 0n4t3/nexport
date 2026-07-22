@@ -552,6 +552,9 @@ async function renderBooklet({ profile, pubkey, notes, parentsById, reactionsByP
   const span = notes.length
     ? spanYearsMonths(notes[0].created_at, notes[notes.length - 1].created_at)
     : { years: 0, months: 0 };
+  // A span under a full month is still real activity — round up to 1 month so
+  // the summary never reads "0 years, 0 months".
+  if (notes.length && span.years === 0 && span.months === 0) span.months = 1;
   const statEntries = [["Posts", notes.length], ["Years", span.years], ["Months", span.months]];
   if (notes.length) {
     const fmtDay = (ts) =>
