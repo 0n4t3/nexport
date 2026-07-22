@@ -17,6 +17,8 @@ const bookletEl = el("booklet");
 const optReactions = el("opt-reactions");
 const optReplies = el("opt-replies");
 const optParents = el("opt-parents");
+const optTheme = el("opt-theme");
+const themeStatus = el("theme-status");
 const dateFromInput = el("date-from");
 const dateToInput = el("date-to");
 const imgWidthInput = el("img-width");
@@ -46,6 +48,7 @@ let state = {
   profile: null,
   relays: [],
   rawEventsByGroup: {}, // for zip export: { "own-posts": [...], "parents": [...], "reactions": [...], "replies": [...] }
+  theme: null, // active ditto.pub profile theme (kind 16767): { background, text, primary, title }
 };
 
 function setStatus(msg) {
@@ -118,6 +121,63 @@ async function discoverRelays(pubkey, seedRelays) {
 async function fetchProfile(pubkey, relays) {
   return pool.get(relays, { kinds: [0], authors: [pubkey] });
 }
+
+// ditto.pub profile theme — kind 16767 is a replaceable event holding the user's
+// currently active theme. It carries three `c` color tags tagged by role
+// (background / text / primary), plus optional font/background tags we don't use.
+// Returns null unless all three roles resolve to valid #rrggbb colors.
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+async function fetchActiveTheme(pubkey, relays) {
+  const ev = await pool.get(relays, { kinds: [16767], authors: [pubkey] });
+  if (!ev) return null;
+  const colors = {};
+  for (const t of ev.tags) {
+    if (t[0] === "c" && HEX_COLOR_RE.test(t[1] || "") && t[2]) colors[t[2]] = t[1].toLowerCase();
+  }
+  if (!colors.background || !colors.text || !colors.primary) return null;
+  const titleTag = ev.tags.find((t) => t[0] === "title" && t[1]);
+  return {
+    background: colors.background,
+    text: colors.text,
+    primary: colors.primary,
+    title: titleTag ? titleTag[1] : "",
+  };
+}
+
+// The booklet's colors are all derived from three CSS custom properties, so a
+// theme is applied (or cleared) purely by overriding them on #booklet. This
+// affects the live preview, the printed PDF, and the HTML export in one shot.
+function applyBookletTheme(theme) {
+  const props = { "--booklet-bg": "background", "--booklet-text": "text", "--booklet-primary": "primary" };
+  for (const [cssVar, key] of Object.entries(props)) {
+    if (theme) bookletEl.style.setProperty(cssVar, theme[key]);
+    else bookletEl.style.removeProperty(cssVar);
+  }
+}
+
+// Reflects the detected theme into the option checkbox + status line, and
+// applies it to the booklet when found. Called after a load completes.
+function updateThemeControl() {
+  if (state.theme) {
+    optTheme.disabled = false;
+    optTheme.checked = true;
+    themeStatus.hidden = false;
+    themeStatus.textContent = state.theme.title
+      ? `Found ditto.pub theme “${state.theme.title}”.`
+      : "Found a ditto.pub theme for this profile.";
+    applyBookletTheme(state.theme);
+  } else {
+    optTheme.disabled = true;
+    optTheme.checked = false;
+    themeStatus.hidden = false;
+    themeStatus.textContent = "No ditto.pub theme found — using the default look.";
+    applyBookletTheme(null);
+  }
+}
+
+optTheme.addEventListener("change", () => {
+  applyBookletTheme(optTheme.checked && state.theme ? state.theme : null);
+});
 
 // since/until are optional unix-second bounds (inclusive) from the date-range
 // option. Relays apply them server-side, so an empty range fetches everything.
@@ -644,6 +704,11 @@ loadBtn.addEventListener("click", async () => {
   pdfBtn.disabled = true;
   zipBtn.disabled = true;
   htmlBtn.disabled = true;
+  optTheme.disabled = true;
+  optTheme.checked = false;
+  themeStatus.hidden = true;
+  state.theme = null;
+  applyBookletTheme(null);
   bookletEl.innerHTML = "";
   setStatus("Resolving identity…");
   setProgress(null);
@@ -676,6 +741,9 @@ loadBtn.addEventListener("click", async () => {
     appendStatus("Fetching profile metadata…");
     const profile = await fetchProfile(pubkey, relays);
     state.profile = profile;
+
+    appendStatus("Checking for a ditto.pub profile theme…");
+    state.theme = await fetchActiveTheme(pubkey, relays);
 
     if (dateRange.since != null || dateRange.until != null) {
       const fmtBound = (ts) => new Date(ts * 1000).toLocaleDateString();
@@ -743,6 +811,9 @@ loadBtn.addEventListener("click", async () => {
 
     appendStatus("Rendering booklet…");
     await renderBooklet({ profile, pubkey, notes, parentsById, reactionsByPost, repliesByPost, quotedById, profilesByPubkey, options });
+
+    // Reflect the detected ditto.pub theme into the option + apply it to the booklet.
+    updateThemeControl();
 
     pdfBtn.disabled = false;
     zipBtn.disabled = false;
@@ -844,7 +915,7 @@ ${overrideCss}
 </style>
 </head>
 <body>
-<div id="booklet">${bookletEl.innerHTML}</div>
+<div id="booklet"${bookletEl.getAttribute("style") ? ` style="${escapeHtml(bookletEl.getAttribute("style"))}"` : ""}>${bookletEl.innerHTML}</div>
 </body>
 </html>`;
 

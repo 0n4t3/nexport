@@ -149,10 +149,22 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 #preview-wrap { max-width: 900px; }
 .hint { color: var(--muted); font-size: 0.85rem; }
 
-/* ---- Booklet content (also what gets rendered to PDF) ---- */
+/* ---- Booklet content (also what gets rendered to PDF / HTML) ----
+   All booklet colors resolve from three theme tokens so a ditto.pub profile
+   theme (kind 16767: background / text / primary) can be applied by overriding
+   just these three custom properties on #booklet. The muted / border / surface
+   shades are mixed from bg + text, so they adapt to either a light or a dark
+   theme automatically. Defaults below reproduce the original light look. */
 #booklet {
-  background: white;
-  color: #1a1a1a;
+  --booklet-bg: #ffffff;
+  --booklet-text: #1a1a1a;
+  --booklet-primary: #5b3fd6;
+  --booklet-muted: color-mix(in srgb, var(--booklet-text) 48%, var(--booklet-bg));
+  --booklet-border: color-mix(in srgb, var(--booklet-text) 18%, var(--booklet-bg));
+  --booklet-surface: color-mix(in srgb, var(--booklet-text) 6%, var(--booklet-bg));
+
+  background: var(--booklet-bg);
+  color: var(--booklet-text);
   border-radius: 8px;
   padding: 0;
   max-height: 70vh;
@@ -178,17 +190,17 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
   background: #333; color: white; font-size: 2rem; font-weight: 600;
 }
 .cover-page h1 { font-size: 2.2rem; margin: 0.25rem 0; }
-.cover-page .nip05 { color: #5b3fd6; font-size: 0.9rem; margin-bottom: 0.15rem; }
-.cover-page .npub { color: #666; font-size: 0.85rem; word-break: break-all; }
-.cover-page .about { max-width: 500px; margin: 1rem auto; color: #444; }
+.cover-page .nip05 { color: var(--booklet-primary); font-size: 0.9rem; margin-bottom: 0.15rem; }
+.cover-page .npub { color: var(--booklet-muted); font-size: 0.85rem; word-break: break-all; }
+.cover-page .about { max-width: 500px; margin: 1rem auto; color: var(--booklet-text); }
 .cover-page .stats {
   display: flex; justify-content: center; gap: 2rem;
-  margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #ddd;
+  margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--booklet-border);
 }
 .cover-page .stats div { text-align: center; }
 .cover-page .stats .stat-value { font-size: 1.3rem; font-weight: 600; display: block; }
-.cover-page .stats .stat-label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.03em; }
-.cover-page .meta { color: #777; margin-top: 1.5rem; font-size: 0.8rem; }
+.cover-page .stats .stat-label { font-size: 0.75rem; color: var(--booklet-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.cover-page .meta { color: var(--booklet-muted); margin-top: 1.5rem; font-size: 0.8rem; }
 
 /* Running account header, repeated on every printed page (screen: hidden) */
 .print-header {
@@ -196,14 +208,14 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 }
 
 .toc { page-break-after: always; }
-.toc h2 { border-bottom: 2px solid #ccc; padding-bottom: 0.4rem; }
+.toc h2 { border-bottom: 2px solid var(--booklet-primary); padding-bottom: 0.4rem; }
 .toc ul { list-style: none; padding: 0; }
-.toc li { display: flex; justify-content: space-between; border-bottom: 1px dotted #ccc; padding: 0.3rem 0; }
+.toc li { display: flex; justify-content: space-between; border-bottom: 1px dotted var(--booklet-border); padding: 0.3rem 0; }
 
 .month-section { page-break-before: always; }
 .month-heading {
   font-size: 1.6rem;
-  border-bottom: 3px solid #333;
+  border-bottom: 3px solid var(--booklet-primary);
   padding-bottom: 0.3rem;
   margin-bottom: 1.25rem;
   break-after: avoid;
@@ -213,22 +225,22 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 .post {
   margin-bottom: 1.5rem;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid #e3e3e3;
+  border-bottom: 1px solid var(--booklet-border);
   break-inside: avoid;
   page-break-inside: avoid;
 }
 .post.parent-post {
-  background: #f6f6f8;
-  border-left: 3px solid #bbb;
+  background: var(--booklet-surface);
+  border-left: 3px solid var(--booklet-primary);
   padding: 0.75rem 1rem;
   margin-bottom: 0.25rem;
   border-radius: 4px;
   font-size: 0.92rem;
 }
-.post.parent-post .post-meta { color: #888; }
+.post.parent-post .post-meta { color: var(--booklet-muted); }
 .reply-connector {
   margin: 0.15rem 0 0.5rem 1.1rem;
-  color: #999;
+  color: var(--booklet-muted);
   font-size: 0.85rem;
 }
 
@@ -266,19 +278,19 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 .post-author {
   font-weight: 600;
   font-size: 0.9rem;
-  color: #222;
+  color: var(--booklet-text);
 }
 
 .post-meta {
   font-size: 0.8rem;
-  color: #777;
+  color: var(--booklet-muted);
 }
 .post-content {
   white-space: pre-wrap;
   word-wrap: break-word;
   font-size: 1rem;
 }
-.post-content a { color: #5b3fd6; }
+.post-content a { color: var(--booklet-primary); }
 
 .post-images {
   display: flex;
@@ -295,15 +307,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 .post-extra {
   margin-top: 0.5rem;
   font-size: 0.85rem;
-  color: #666;
+  color: var(--booklet-muted);
 }
 
 .embedded-quote {
   margin-top: 0.6rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--booklet-border);
   border-radius: 8px;
   padding: 0.6rem 0.8rem;
-  background: #fafafa;
+  background: var(--booklet-surface);
   font-size: 0.92rem;
   break-inside: avoid;
   page-break-inside: avoid;
@@ -314,14 +326,14 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
   padding-bottom: 0;
 }
 .embedded-quote.quote-missing {
-  color: #999;
+  color: var(--booklet-muted);
   font-style: italic;
   font-size: 0.85rem;
 }
 .replies-block {
   margin-top: 0.5rem;
   padding-left: 1rem;
-  border-left: 2px solid #eee;
+  border-left: 2px solid var(--booklet-border);
 }
 .replies-block .post {
   border-bottom: none;
@@ -330,7 +342,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 }
 .replies-block .post-content { font-size: 0.9rem; }
 
-.empty-state { color: #888; padding: 2rem; text-align: center; }
+.empty-state { color: var(--booklet-muted); padding: 2rem; text-align: center; }
 
 /* ---- Print / Save-as-PDF ---- */
 @media print {
@@ -348,6 +360,13 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
     max-height: none;
     overflow: visible;
     border-radius: 0;
+  }
+  /* Force the themed background/text colors to print instead of being dropped
+     as "background graphics" — otherwise an applied ditto.pub theme would be
+     invisible in the PDF. */
+  #booklet, #booklet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* The running "· Nostr Post History" header is intentionally not printed —
